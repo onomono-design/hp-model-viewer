@@ -279,9 +279,9 @@ function createUI() {
     
     // Model dropdown
     const modelOptions = [
-        { value: 'HP-01-TURT-GAMEREADY-4.fbx', label: 'Turtle Model' }
+        { value: 'https://crunchlabs-ono-cloud.s3.us-west-1.amazonaws.com/HP-01-TURT-GAMEREADY-4.fbx', label: 'Turtle Model (S3)' }
     ];
-    const modelSelect = createDropdown('modelSelect', 'Select Model', modelOptions, 'HP-01-TURT-GAMEREADY-4.fbx');
+    const modelSelect = createDropdown('modelSelect', 'Select Model', modelOptions, 'https://crunchlabs-ono-cloud.s3.us-west-1.amazonaws.com/HP-01-TURT-GAMEREADY-4.fbx');
     
     // Add model dropdown to panel (put it at the top of the panel)
     controlsPanel.insertBefore(modelSelect.container, controlsPanel.firstChild);
@@ -332,7 +332,7 @@ const uiControls = createUI();
 // Global variables for model management
 let loadedModel = null;
 let isLoading = false;
-let modelFilename = 'HP-01-TURT-GAMEREADY-4.fbx';
+let modelFilename = 'https://crunchlabs-ono-cloud.s3.us-west-1.amazonaws.com/HP-01-TURT-GAMEREADY-4.fbx';
 
 // Function to log messages (no longer shows in UI, only in console if needed)
 function logMessage(message) {
