@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>HP-01-TURT Wireframe Viewer</title>
+    <!-- Martian Mono Condensed font from Google Fonts -->
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Martian+Mono+Condensed:wght@300;400;500&display=swap">
+    <style>
+        body { margin: 0; overflow: hidden; background-color: #222; color: white; font-family: 'Martian Mono Condensed', monospace; }
+        canvas { display: block; }
+        #error {
+            position: absolute;
+            top: 40px;
+            width: 100%;
+            text-align: center;
+            color: red;
+            font-family: Arial, sans-serif;
+            z-index: 10;
+            display: none;
+        }
+        #debug {
+            position: absolute;
+            bottom: 10px;
+            left: 10px;
+            color: white;
+            font-family: monospace;
+            font-size: 12px;
+            background: rgba(0,0,0,0.7);
+            padding: 10px;
+            border-radius: 4px;
+            max-width: 50%;
+            max-height: 30%;
+            overflow: auto;
+            z-index: 10;
+        }
+        #progress-container {
+            position: absolute;
+            bottom: 10px;
+            left: 10px;
+            font-size: 12px;
+            z-index: 100;
+        }
+    </style>
+</head>
+<body>
+    <div id="error"></div>
+    <div id="debug"></div>
+    <div id="progress-container"></div>
+    
+    <script>
+        // Simple debug function to check file access before loading Three.js
+        function checkFileExists(url) {
+            const debug = document.getElementById('debug');
+            debug.innerHTML += `Checking file: ${url}<br>`;
+            
+            fetch(url)
+                .then(response => {
+                    if (!response.ok) {
+                        throw new Error(`Status: ${response.status}`);
+                    }
+                    debug.innerHTML += `✓ File exists: ${url} (${response.status})<br>`;
+                    return response.blob();
+                })
+                .then(blob => {
+                    const sizeMB = (blob.size / (1024 * 1024)).toFixed(2);
+                    debug.innerHTML += `✓ File size: ${sizeMB} MB<br>`;
+                })
+                .catch(error => {
+                    debug.innerHTML += `✗ Error accessing file: ${url} - ${error}<br>`;
+                    document.getElementById('error').style.display = 'block';
+                    document.getElementById('error').textContent = `Error accessing model file. Check console for details.`;
+                });
+        }
+        
+        // Check if the FBX file is accessible
+        window.onload = function() {
+            checkFileExists('HP-01-TURT-GAMEREADY-4.fbx');
+        };
+    </script>
+    
+    <script async src="https://unpkg.com/es-module-shims@1.6.3/dist/es-module-shims.js"></script>
+    <script type="importmap">
+        {
+            "imports": {
+                "three": "https://unpkg.com/three@0.158.0/build/three.module.js",
+                "three/addons/": "https://unpkg.com/three@0.158.0/examples/jsm/"
+            }
+        }
+    </script>
+    <script type="module" src="main.js"></script>
+</body>
+</html> 

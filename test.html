@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FBX Test</title>
+    <style>
+        body { margin: 0; background-color: #222; color: white; font-family: Arial, sans-serif; padding: 20px; }
+        #status { margin-bottom: 20px; }
+        .success { color: #4CAF50; }
+        .error { color: #f44336; }
+    </style>
+</head>
+<body>
+    <h1>FBX File Test</h1>
+    <div id="status">Checking FBX file availability...</div>
+    <div id="fileDetails"></div>
+
+    <script>
+        const status = document.getElementById('status');
+        const fileDetails = document.getElementById('fileDetails');
+        const model = 'HP-01-TURT-GAMEREADY-4.fbx';
+        
+        // Test direct file access with fetch
+        fetch(model)
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error(`HTTP error! Status: ${response.status}`);
+                }
+                status.innerHTML = `<span class="success">✓ FBX file is accessible (${response.status})</span>`;
+                return response.blob();
+            })
+            .then(blob => {
+                const sizeMB = (blob.size / (1024 * 1024)).toFixed(2);
+                fileDetails.innerHTML += `<p>File size: ${sizeMB} MB</p>`;
+                fileDetails.innerHTML += `<p>File type: ${blob.type || 'Unknown'}</p>`;
+                
+                // Create a download link for testing
+                const downloadLink = document.createElement('a');
+                downloadLink.href = URL.createObjectURL(blob);
+                downloadLink.download = model;
+                downloadLink.textContent = 'Download FBX file to verify';
+                downloadLink.style.display = 'block';
+                downloadLink.style.margin = '20px 0';
+                downloadLink.style.color = '#2196F3';
+                fileDetails.appendChild(downloadLink);
+                
+                // Add file listing for debugging
+                fetch('.')
+                    .then(response => response.text())
+                    .then(html => {
+                        fileDetails.innerHTML += '<h3>Directory listing:</h3>';
+                        fileDetails.innerHTML += '<pre>' + html.replace(/</g, '&lt;').replace(/>/g, '&gt;') + '</pre>';
+                    })
+                    .catch(error => {
+                        fileDetails.innerHTML += `<p class="error">Could not list directory: ${error.message}</p>`;
+                    });
+            })
+            .catch(error => {
+                status.innerHTML = `<span class="error">✗ Error: ${error.message}</span>`;
+                
+                // Try listing files in directory for debugging
+                fetch('.')
+                    .then(response => response.text())
+                    .then(html => {
+                        fileDetails.innerHTML += '<h3>Files in directory:</h3>';
+                        fileDetails.innerHTML += '<pre>' + html.replace(/</g, '&lt;').replace(/>/g, '&gt;') + '</pre>';
+                    })
+                    .catch(dirError => {
+                        fileDetails.innerHTML += `<p class="error">Could not list directory: ${dirError.message}</p>`;
+                    });
+            });
+    </script>
+</body>
+</html> 
