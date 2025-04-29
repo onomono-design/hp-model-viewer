@@ -124,8 +124,8 @@ function createUI() {
     controlsPanel.style.width = '220px';
     controlsPanel.style.transition = 'max-height 0.3s ease-in-out, opacity 0.2s ease-in-out';
     controlsPanel.style.overflow = 'hidden';
-    controlsPanel.style.maxHeight = '500px'; // Starting expanded
-    controlsPanel.style.opacity = '1';
+    controlsPanel.style.maxHeight = '0px'; // Start collapsed
+    controlsPanel.style.opacity = '0';
     controlsPanel.style.border = '1px solid white';  // Add white outline
     
     // Toggle controls visibility
@@ -140,6 +140,9 @@ function createUI() {
             toggleIcon.style.transform = 'rotate(-90deg)';
         }
     });
+    
+    // Update toggle icon initial state
+    toggleIcon.style.transform = 'rotate(-90deg)';
     
     // Add header and panel to container
     uiContainer.appendChild(header);
