@@ -29,4 +29,4 @@ A retro-style 3D wireframe model viewer built with Three.js that displays models
 
 ## Demo
 
-The live demo is available at: [GitHub Pages URL] 
+The live demo is available at: [https://onomono-design.github.io/hp-model-viewer/](https://onomono-design.github.io/hp-model-viewer/) 
