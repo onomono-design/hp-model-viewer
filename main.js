@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { FBXLoader } from 'three/addons/loaders/FBXLoader.js';
+import { OutlineEffect } from './OutlineEffect.js';
 
 // Scene setup
 const scene = new THREE.Scene();
@@ -16,6 +17,14 @@ renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.setPixelRatio(window.devicePixelRatio);
 renderer.shadowMap.enabled = true;
 document.body.appendChild(renderer.domElement);
+
+// Create outline effect
+const outlineEffect = new OutlineEffect(renderer, {
+    defaultThickness: 0.005,
+    defaultColor: new THREE.Color(0xffffff),
+    defaultAlpha: 0.45,
+    defaultKeepAlive: true
+});
 
 // Controls
 const controls = new OrbitControls(camera, renderer.domElement);
@@ -60,6 +69,11 @@ let zoomLevel = 1.0; // Initial zoom level
 let cameraHeight = 0.5; // Initial camera height (0-1 range)
 let userReleasedAngle = 0; // Store the angle where the user released
 let edgeThreshold = 5; // Fixed edge threshold at 5 degrees
+let angularVelocity = 0; // Angular velocity for inertia
+let lastRotationTime = 0; // Time of last rotation
+let lastRotationAngle = 0; // Last rotation angle
+let shaderMode = 'wireframe'; // Current shader mode: 'wireframe' or 'toon'
+let isToonMode = false; // Flag to track if we're in toon mode
 
 // Load Google Font
 const fontLink = document.createElement('link');
@@ -141,7 +155,7 @@ function createUI() {
         labelEl.style.marginBottom = '5px';
         labelEl.style.fontSize = '13px';
         labelEl.htmlFor = name;
-        labelEl.textContent = label;
+        labelEl.textContent = label.toUpperCase();
         
         const sliderContainer = document.createElement('div');
         sliderContainer.style.display = 'flex';
@@ -186,7 +200,7 @@ function createUI() {
         labelEl.style.marginBottom = '5px';
         labelEl.style.fontSize = '13px';
         labelEl.htmlFor = name;
-        labelEl.textContent = label;
+        labelEl.textContent = label.toUpperCase();
         
         const picker = document.createElement('input');
         picker.type = 'color';
@@ -208,7 +222,7 @@ function createUI() {
     // Create button
     function createButton(text, onClick) {
         const button = document.createElement('button');
-        button.textContent = text;
+        button.textContent = text.toUpperCase();
         button.style.padding = '8px';
         button.style.width = '100%';
         button.style.cursor = 'pointer';
@@ -224,11 +238,67 @@ function createUI() {
         return button;
     }
     
+    // Create radio buttons for shader mode
+    function createRadioGroup(name, label, options, defaultValue) {
+        const container = document.createElement('div');
+        container.style.marginBottom = '15px';
+        
+        const labelEl = document.createElement('label');
+        labelEl.style.display = 'block';
+        labelEl.style.marginBottom = '5px';
+        labelEl.style.fontSize = '13px';
+        labelEl.textContent = label.toUpperCase();
+        
+        const radioContainer = document.createElement('div');
+        radioContainer.style.display = 'flex';
+        radioContainer.style.flexDirection = 'column';
+        
+        const radioButtons = [];
+        
+        options.forEach(option => {
+            const radioWrap = document.createElement('div');
+            radioWrap.style.display = 'flex';
+            radioWrap.style.alignItems = 'center';
+            radioWrap.style.marginBottom = '5px';
+            
+            const radio = document.createElement('input');
+            radio.type = 'radio';
+            radio.id = `${name}-${option.value}`;
+            radio.name = name;
+            radio.value = option.value;
+            radio.checked = option.value === defaultValue;
+            radio.style.margin = '0 8px 0 0';
+            
+            const radioLabel = document.createElement('label');
+            radioLabel.htmlFor = `${name}-${option.value}`;
+            radioLabel.textContent = option.label.toUpperCase();
+            radioLabel.style.fontSize = '12px';
+            
+            radioWrap.appendChild(radio);
+            radioWrap.appendChild(radioLabel);
+            radioContainer.appendChild(radioWrap);
+            
+            radioButtons.push(radio);
+        });
+        
+        container.appendChild(labelEl);
+        container.appendChild(radioContainer);
+        
+        return { container, radioButtons };
+    }
+    
     // Opacity slider
     const opacity = createSlider('opacity', 'Wireframe Opacity', 0, 100, 45);
     
     // Background color
     const bgColor = createColorPicker('bgColor', 'Background Color', '#000000');
+    
+    // Shader mode options
+    const shaderOptions = [
+        { value: 'wireframe', label: 'Wireframe' },
+        { value: 'toon', label: 'Toon Outline' }
+    ];
+    const shaderMode = createRadioGroup('shaderMode', 'Shader Mode', shaderOptions, 'wireframe');
     
     // Zoom slider
     const zoom = createSlider('zoom', 'Zoom Level', 50, 200, 100);
@@ -240,7 +310,7 @@ function createUI() {
     const rotSpeed = createSlider('rotationSpeed', 'Rotation Speed', 0, 5, 1, 0.1, 'x');
     
     // Retry button
-    const retryButton = createButton('Retry Loading', () => loadModel(true));
+    const retryButton = createButton('Reload', () => loadModel(true));
     
     // Model label
     const modelLabel = document.createElement('div');
@@ -255,6 +325,7 @@ function createUI() {
     
     // Add all controls to the panel
     controlsPanel.appendChild(opacity.container);
+    controlsPanel.appendChild(shaderMode.container);
     controlsPanel.appendChild(bgColor.container);
     controlsPanel.appendChild(zoom.container);
     controlsPanel.appendChild(camHeight.container);
@@ -263,6 +334,15 @@ function createUI() {
     
     // Add to document
     document.body.appendChild(uiContainer);
+    
+    // Event listeners for shader mode
+    shaderMode.radioButtons.forEach(radio => {
+        radio.addEventListener('change', (event) => {
+            if (event.target.checked) {
+                updateShaderMode(event.target.value);
+            }
+        });
+    });
     
     return {
         panel: controlsPanel,
@@ -276,7 +356,8 @@ function createUI() {
         cameraHeightValue: camHeight.valueDisplay,
         rotationSpeedSlider: rotSpeed.slider,
         rotationSpeedValue: rotSpeed.valueDisplay,
-        retryButton: retryButton
+        retryButton: retryButton,
+        shaderModeRadios: shaderMode.radioButtons
     };
 }
 
@@ -291,330 +372,6 @@ let modelFilename = 'https://crunchlabs-ono-cloud.s3.us-west-1.amazonaws.com/HP-
 function logMessage(message) {
     // Silent logging - only uncomment for debugging
     // console.log(message);
-}
-
-// Function to regenerate wireframe with new threshold
-function regenerateWireframe(model, threshold) {
-    if (!model || !model.userData.edgesGroup) return;
-    
-    // Remove old edges group
-    const oldEdgesGroup = model.userData.edgesGroup;
-    model.remove(oldEdgesGroup);
-    
-    // Create a new edges group
-    const newEdgesGroup = new THREE.Group();
-    
-    // Material for wireframe
-    const edgeMaterial = new THREE.LineBasicMaterial({
-        color: 0xffffff,
-        linewidth: 1,
-        transparent: true,
-        opacity: parseFloat(uiControls.opacitySlider.value) / 100
-    });
-    
-    // Store the material for later updates
-    model.userData.wireframeMaterial = edgeMaterial;
-    
-    // Create new edge geometry for each mesh
-    model.traverse((child) => {
-        if (child.isMesh) {
-            // Create new edges with the updated threshold
-            const edges = new THREE.EdgesGeometry(child.geometry, threshold);
-            const line = new THREE.LineSegments(edges, edgeMaterial);
-            
-            // Copy transform properties
-            line.position.copy(child.position);
-            line.rotation.copy(child.rotation);
-            line.scale.copy(child.scale);
-            line.matrix.copy(child.matrix);
-            line.matrixWorld.copy(child.matrixWorld);
-            
-            newEdgesGroup.add(line);
-        }
-    });
-    
-    // Add new edges group
-    model.add(newEdgesGroup);
-    model.userData.edgesGroup = newEdgesGroup;
-    
-    return newEdgesGroup;
-}
-
-// Create loading overlay
-function createLoadingOverlay() {
-    // Hide the original status element 
-    statusElement.style.display = 'none';
-    
-    // Main overlay container
-    const overlay = document.createElement('div');
-    overlay.style.position = 'fixed';
-    overlay.style.top = '0';
-    overlay.style.left = '0';
-    overlay.style.width = '100%';
-    overlay.style.height = '100%';
-    overlay.style.backgroundColor = 'black';
-    overlay.style.zIndex = '9999';
-    overlay.style.display = 'flex';
-    overlay.style.flexDirection = 'column';
-    overlay.style.justifyContent = 'center';
-    overlay.style.alignItems = 'center';
-    overlay.style.transition = 'opacity 1s ease-out';
-    
-    // Create a container for all elements that should fade together
-    const contentContainer = document.createElement('div');
-    contentContainer.style.display = 'flex';
-    contentContainer.style.flexDirection = 'column';
-    contentContainer.style.alignItems = 'center';
-    overlay.appendChild(contentContainer);
-    
-    // Title
-    const title = document.createElement('div');
-    title.textContent = 'LOADING MODEL';
-    title.style.color = 'white';
-    title.style.fontFamily = '"Martian Mono Condensed", monospace';
-    title.style.fontSize = '32px';
-    title.style.marginBottom = '30px';
-    title.style.letterSpacing = '3px';
-    contentContainer.appendChild(title);
-    
-    // Container for progress bar
-    const progressContainer = document.createElement('div');
-    progressContainer.style.width = '60%';
-    progressContainer.style.maxWidth = '500px';
-    progressContainer.style.height = '30px';
-    progressContainer.style.border = '3px solid white';
-    progressContainer.style.padding = '2px';
-    progressContainer.style.position = 'relative';
-    progressContainer.style.display = 'flex';
-    progressContainer.style.alignItems = 'stretch';
-    contentContainer.appendChild(progressContainer);
-    
-    // Create 20 empty block slots (each representing 5%)
-    const blocks = [];
-    const totalBlocks = 20;
-    
-    for (let i = 0; i < totalBlocks; i++) {
-        const block = document.createElement('div');
-        block.style.flex = '1';
-        block.style.margin = '0 2px';
-        block.style.backgroundColor = 'transparent';
-        block.style.transition = 'none'; // No transition for retro feel
-        progressContainer.appendChild(block);
-        blocks.push(block);
-    }
-    
-    // Progress text
-    const progressText = document.createElement('div');
-    progressText.textContent = '0%';
-    progressText.style.color = 'white';
-    progressText.style.fontFamily = '"Martian Mono Condensed", monospace';
-    progressText.style.fontSize = '16px';
-    progressText.style.marginTop = '15px';
-    contentContainer.appendChild(progressText);
-    
-    // Status text
-    const statusText = document.createElement('div');
-    statusText.textContent = 'Initializing...';
-    statusText.style.color = 'white';
-    statusText.style.fontFamily = '"Martian Mono Condensed", monospace';
-    statusText.style.fontSize = '18px';
-    statusText.style.marginTop = '30px';
-    contentContainer.appendChild(statusText);
-    
-    // Update progress function - fills in blocks up to the percentage
-    function updateProgress(percent) {
-        // Update text
-        progressText.textContent = `${percent}%`;
-        
-        // Calculate how many blocks should be filled
-        const blocksToFill = Math.floor(percent / 5);
-        
-        // Fill in blocks one by one
-        for (let i = 0; i < totalBlocks; i++) {
-            if (i < blocksToFill) {
-                blocks[i].style.backgroundColor = 'white';
-            } else {
-                blocks[i].style.backgroundColor = 'transparent';
-            }
-        }
-    }
-    
-    // Show success and fade out
-    function showSuccess() {
-        // Update to 100%
-        updateProgress(100);
-        
-        // Show success message
-        statusText.textContent = 'MODEL LOADED SUCCESSFULLY';
-        
-        // Fade out everything together after a delay
-        setTimeout(() => {
-            overlay.style.opacity = '0';
-            
-            // Remove from DOM after fade out
-            setTimeout(() => {
-                if (overlay.parentNode) {
-                    overlay.parentNode.removeChild(overlay);
-                    // Show UI after loading is complete
-                    statusElement.style.display = 'none';
-                }
-            }, 1000);
-        }, 500);
-    }
-    
-    // Add to document
-    document.body.appendChild(overlay);
-    
-    return {
-        overlay,
-        updateProgress,
-        showSuccess,
-        statusText,
-        blocks
-    };
-}
-
-// Function to load the model
-function loadModel(isRetry = false) {
-    if (isLoading && !isRetry) return;
-    
-    isLoading = true;
-    
-    // Create or reset loading overlay
-    const loadingOverlay = createLoadingOverlay();
-    
-    if (isRetry) {
-        if (loadedModel) {
-            scene.remove(loadedModel);
-            loadedModel = null;
-        }
-        logMessage('Retrying model load...');
-    }
-    
-    // We're not using statusElement anymore, all status is shown in the overlay
-    
-    logMessage(`Attempting to load: ${modelFilename}`);
-    
-    // Check if file exists first
-    fetch(modelFilename)
-        .then(response => {
-            if (!response.ok) {
-                throw new Error(`File not accessible (${response.status})`);
-            }
-            
-            logMessage(`File exists. Size: ${response.headers.get('content-length')} bytes`);
-            loadingOverlay.statusText.textContent = 'FILE FOUND - LOADING MODEL DATA';
-            
-            // Create loader with better error handling
-            const loadManager = new THREE.LoadingManager();
-            
-            loadManager.onProgress = (url, loaded, total) => {
-                const percent = Math.round((loaded / total) * 100);
-                // Update loading overlay instead of statusElement
-                logMessage(`Loading progress: ${percent}%`);
-                
-                if (percent > 15) { // Only update if beyond initial animation
-                    // Calculate the exact number of blocks to fill
-                    const blocksFilled = Math.min(Math.floor(percent / 5), 20);
-                    
-                    // Make sure we don't go backwards in visual progress
-                    const currentVisibleBlocks = loadingOverlay.blocks.filter(
-                        block => block.style.backgroundColor === 'white'
-                    ).length;
-                    
-                    // Only fill blocks that haven't been filled yet
-                    if (blocksFilled > currentVisibleBlocks) {
-                        for (let i = currentVisibleBlocks; i < blocksFilled; i++) {
-                            loadingOverlay.blocks[i].style.backgroundColor = 'white';
-                        }
-                        loadingOverlay.progressText.textContent = `${blocksFilled * 5}%`;
-                    }
-                }
-            };
-            
-            loadManager.onError = (url) => {
-                logMessage(`Error loading: ${url}`);
-                loadingOverlay.statusText.textContent = 'ERROR LOADING MODEL';
-                isLoading = false;
-            };
-            
-            const fbxLoader = new FBXLoader(loadManager);
-            
-            // Add a timeout to handle stalled loading
-            const loadingTimeout = setTimeout(() => {
-                if (isLoading) {
-                    logMessage('Loading timed out after 30 seconds');
-                    loadingOverlay.statusText.textContent = 'LOADING TIMED OUT';
-                }
-            }, 30000);
-            
-            // Start loading the model
-            fbxLoader.load(
-                modelFilename,
-                (fbx) => {
-                    clearTimeout(loadingTimeout);
-                    
-                    logMessage('Model loaded successfully!');
-                    loadingOverlay.showSuccess();
-                    
-                    // Scale and position the model
-                    fbx.scale.set(0.02, 0.02, 0.02);
-                    fbx.position.set(0, 0, 0);
-                    
-                    // Check if model has any meshes
-                    let hasMeshes = false;
-                    fbx.traverse(child => {
-                        if (child.isMesh) {
-                            hasMeshes = true;
-                            logMessage(`Found mesh: ${child.name}`);
-                        }
-                    });
-                    
-                    if (!hasMeshes) {
-                        logMessage('WARNING: Model has no meshes!');
-                    }
-                    
-                    // Apply wireframe
-                    applyWireframeToModel(fbx);
-                    
-                    // Add to scene
-                    scene.add(fbx);
-                    loadedModel = fbx;
-                    
-                    // Center camera on model
-                    const box = new THREE.Box3().setFromObject(fbx);
-                    const center = box.getCenter(new THREE.Vector3());
-                    const size = box.getSize(new THREE.Vector3());
-                    
-                    logMessage(`Model size: ${JSON.stringify(size)}`);
-                    
-                    const maxDim = Math.max(size.x, size.y, size.z);
-                    camera.position.set(center.x, center.y + maxDim/3, center.z + maxDim*1.5);
-                    controls.target.set(center.x, center.y, center.z);
-                    controls.update();
-                    
-                    // Initialize camera height
-                    updateCameraHeight();
-                    
-                    isLoading = false;
-                },
-                (xhr) => {
-                    const percentComplete = Math.round(xhr.loaded / xhr.total * 100);
-                    logMessage(`Loading progress: ${percentComplete}% (${xhr.loaded}/${xhr.total} bytes)`);
-                },
-                (error) => {
-                    clearTimeout(loadingTimeout);
-                    logMessage(`Error loading model: ${error.message || error}`);
-                    loadingOverlay.statusText.textContent = 'ERROR LOADING MODEL';
-                    isLoading = false;
-                }
-            );
-        })
-        .catch(error => {
-            logMessage(`Error checking file: ${error.message}`);
-            loadingOverlay.statusText.textContent = 'ERROR LOADING MODEL';
-            isLoading = false;
-        });
 }
 
 // Function to apply wireframe to model
@@ -668,15 +425,89 @@ function applyWireframeToModel(model) {
     // Store the edges group for later reference
     model.userData.edgesGroup = edgesGroup;
     
+    isToonMode = false; // Set mode flag
+    
     return edgesGroup;
+}
+
+// Function to apply toon material with outline
+function applyToonOutlineToModel(model) {
+    logMessage('Applying toon material with outline effect');
+    
+    // Remove existing edges group if present
+    if (model.userData.edgesGroup) {
+        model.remove(model.userData.edgesGroup);
+        model.userData.edgesGroup = null;
+    }
+    
+    // Create a gradientMap for toon shading
+    const colors = new Uint8Array([0, 128, 255, 255]);
+    const gradientMap = new THREE.DataTexture(colors, colors.length, 1, THREE.RedFormat);
+    gradientMap.needsUpdate = true;
+    
+    // Process all meshes and apply toon material
+    model.traverse((child) => {
+        if (child.isMesh) {
+            logMessage(`Processing mesh: ${child.name} - applying toon material`);
+            
+            // Create toon material
+            const toonMaterial = new THREE.MeshToonMaterial({
+                color: 0xffffff,
+                gradientMap: gradientMap,
+                transparent: true,
+                opacity: 0.8
+            });
+            
+            // Store original material and geometry
+            child.userData.originalMaterial = child.material;
+            
+            // Apply new material
+            child.material = toonMaterial;
+            
+            // Make visible
+            child.visible = true;
+        }
+    });
+    
+    isToonMode = true; // Set mode flag
+    
+    return model;
+}
+
+// Function to update the shader mode
+function updateShaderMode(mode) {
+    if (!loadedModel) return;
+    
+    shaderMode = mode;
+    
+    if (mode === 'wireframe') {
+        applyWireframeToModel(loadedModel);
+    } else if (mode === 'toon') {
+        applyToonOutlineToModel(loadedModel);
+    }
 }
 
 // Update opacity based on the slider
 uiControls.opacitySlider.addEventListener('input', (event) => {
-    if (!loadedModel || !loadedModel.userData.wireframeMaterial) return;
+    if (!loadedModel) return;
     
     const opacity = parseInt(event.target.value) / 100;
-    loadedModel.userData.wireframeMaterial.opacity = opacity;
+    
+    if (isToonMode) {
+        // In toon mode, update the outline effect's alpha
+        outlineEffect.visibleEdgeColor.setAlpha(opacity);
+        
+        // Also update the materials if needed
+        loadedModel.traverse((child) => {
+            if (child.isMesh && child.material) {
+                child.material.opacity = Math.min(0.8, opacity * 1.5); // Scale the opacity for better balance
+            }
+        });
+    } else if (loadedModel.userData.wireframeMaterial) {
+        // In wireframe mode, update the wireframe material
+        loadedModel.userData.wireframeMaterial.opacity = opacity;
+    }
+    
     uiControls.opacityValue.textContent = `${event.target.value}%`;
 });
 
@@ -778,10 +609,46 @@ function updateCameraDistance() {
     controls.update();
 }
 
+// Track mouse movement for inertia calculation
+function calculateAngularVelocity() {
+    const currentTime = Date.now();
+    const currentAngle = Math.atan2(
+        camera.position.z - controls.target.z,
+        camera.position.x - controls.target.x
+    );
+    
+    if (lastRotationTime && currentTime - lastRotationTime < 100) {
+        const deltaTime = (currentTime - lastRotationTime) / 1000; // in seconds
+        let deltaAngle = currentAngle - lastRotationAngle;
+        
+        // Handle angle wrapping
+        if (deltaAngle > Math.PI) deltaAngle -= 2 * Math.PI;
+        if (deltaAngle < -Math.PI) deltaAngle += 2 * Math.PI;
+        
+        // Calculate angular velocity (radians per second)
+        angularVelocity = deltaAngle / deltaTime;
+    }
+    
+    lastRotationTime = currentTime;
+    lastRotationAngle = currentAngle;
+}
+
 // Event handlers for orbit controls to track user interaction
 renderer.domElement.addEventListener('mousedown', () => {
     userInteracting = true;
     autoRotate = false;
+    angularVelocity = 0;
+    lastRotationTime = Date.now();
+    lastRotationAngle = Math.atan2(
+        camera.position.z - controls.target.z,
+        camera.position.x - controls.target.x
+    );
+});
+
+renderer.domElement.addEventListener('mousemove', () => {
+    if (userInteracting) {
+        calculateAngularVelocity();
+    }
 });
 
 renderer.domElement.addEventListener('mouseup', () => {
@@ -795,12 +662,24 @@ renderer.domElement.addEventListener('mouseup', () => {
 });
 
 // Add touch event handlers for mobile
-renderer.domElement.addEventListener('touchstart', () => {
+renderer.domElement.addEventListener('touchstart', (event) => {
     userInteracting = true;
     autoRotate = false;
+    angularVelocity = 0;
+    lastRotationTime = Date.now();
+    lastRotationAngle = Math.atan2(
+        camera.position.z - controls.target.z,
+        camera.position.x - controls.target.x
+    );
 });
 
-renderer.domElement.addEventListener('touchend', () => {
+renderer.domElement.addEventListener('touchmove', (event) => {
+    if (userInteracting) {
+        calculateAngularVelocity();
+    }
+});
+
+renderer.domElement.addEventListener('touchend', (event) => {
     userInteracting = false;
     userReleasedAngle = Math.atan2(
         camera.position.z - controls.target.z,
@@ -836,31 +715,48 @@ function updateOrbitTransition() {
         const currentHeight = camera.position.y;
         
         if (elapsedTime < transitionDuration) {
-            // Simple easing function (cubic ease-out)
-            const t = elapsedTime / transitionDuration;
-            const easedT = easeOutCubic(t);
+            // For the initial inertia phase, apply angular velocity with easing
+            const initialInertiaPhase = Math.min(1000, transitionDuration / 2); // 1 second or half transition time
             
-            // Calculate the auto-rotation angle based on time
-            const timeInSeconds = currentTime * 0.001; // Convert to seconds
-            const autoRotationSpeed = 0.05 * autoRotateSpeed;
+            if (elapsedTime < initialInertiaPhase) {
+                // In initial inertia phase, use angular velocity with decay
+                const decayFactor = 1 - (elapsedTime / initialInertiaPhase);
+                const inertiaAngle = userReleasedAngle + (angularVelocity * elapsedTime * 0.001 * decayFactor);
+                
+                // Set new position with inertia
+                camera.position.x = controls.target.x + horizontalDistance * Math.cos(inertiaAngle);
+                camera.position.z = controls.target.z + horizontalDistance * Math.sin(inertiaAngle);
+            } else {
+                // After inertia phase, transition to auto-rotation
+                const t = (elapsedTime - initialInertiaPhase) / (transitionDuration - initialInertiaPhase);
+                const easedT = easeOutCubic(t);
+                
+                // Calculate the rotation after inertia phase
+                const postInertiaAngle = userReleasedAngle + (angularVelocity * initialInertiaPhase * 0.001);
+                
+                // Auto-rotation speed
+                const autoRotationSpeed = 0.05 * autoRotateSpeed;
+                const targetAngle = postInertiaAngle + (autoRotationSpeed * (elapsedTime - initialInertiaPhase) * 0.001);
+                
+                // Blend between inertia and auto-rotation
+                const blendedAngle = postInertiaAngle + (targetAngle - postInertiaAngle) * easedT;
+                
+                // Set new position
+                camera.position.x = controls.target.x + horizontalDistance * Math.cos(blendedAngle);
+                camera.position.z = controls.target.z + horizontalDistance * Math.sin(blendedAngle);
+            }
             
-            // Start angle is where user released
-            // Target angle is based on continuous rotation
-            const startAngle = userReleasedAngle;
-            const targetAngle = startAngle + (autoRotationSpeed * elapsedTime * 0.001);
-            
-            // Blend between current position and smooth auto-rotation
-            const blendedAngle = startAngle + (targetAngle - startAngle) * easedT;
-            
-            // Set new position
-            camera.position.x = controls.target.x + horizontalDistance * Math.cos(blendedAngle);
-            camera.position.z = controls.target.z + horizontalDistance * Math.sin(blendedAngle);
-            camera.position.y = currentHeight; // Maintain the same height
+            camera.position.y = currentHeight; // Maintain height
         } else {
             // After transition is complete, just do regular rotation
             const timeInSeconds = currentTime * 0.001;
-            const baseAngle = userReleasedAngle + (0.05 * autoRotateSpeed * transitionDuration * 0.001);
-            const rotationAngle = baseAngle + (0.05 * autoRotateSpeed * (elapsedTime - transitionDuration) * 0.001);
+            // Calculate where we ended up after the transition
+            const postTransitionAngle = userReleasedAngle + 
+                (angularVelocity * Math.min(1000, transitionDuration/2) * 0.001) + 
+                (0.05 * autoRotateSpeed * (transitionDuration - Math.min(1000, transitionDuration/2)) * 0.001);
+            
+            // Continue rotating from that point
+            const rotationAngle = postTransitionAngle + (0.05 * autoRotateSpeed * (elapsedTime - transitionDuration) * 0.001);
             
             // Set new position
             camera.position.x = controls.target.x + horizontalDistance * Math.cos(rotationAngle);
@@ -889,7 +785,11 @@ function animate() {
         controls.update();
     }
     
-    renderer.render(scene, camera);
+    if (isToonMode) {
+        outlineEffect.render(scene, camera);
+    } else {
+        renderer.render(scene, camera);
+    }
 }
 
 animate(); 
