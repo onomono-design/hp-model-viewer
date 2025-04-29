@@ -24,6 +24,13 @@ controls.dampingFactor = 0.05;
 controls.enableZoom = false; // Disable regular zoom, we'll use our custom slider
 controls.enablePan = false; // Disable panning
 controls.rotateSpeed = 0.8;
+controls.touches = {
+    ONE: THREE.TOUCH.ROTATE,
+    TWO: THREE.TOUCH.DOLLY_PAN
+};
+// Enable full rotation on all axes
+controls.minPolarAngle = 0;
+controls.maxPolarAngle = Math.PI;
 
 // Status message element with more detailed loading info
 const statusElement = document.createElement('div');
@@ -52,7 +59,7 @@ let lastUserRotationX = 0;
 let zoomLevel = 1.0; // Initial zoom level
 let cameraHeight = 0.5; // Initial camera height (0-1 range)
 let userReleasedAngle = 0; // Store the angle where the user released
-let edgeThreshold = 5; // Default edge threshold in degrees (1-89)
+let edgeThreshold = 5; // Fixed edge threshold at 5 degrees
 
 // Load Google Font
 const fontLink = document.createElement('link');
@@ -220,9 +227,6 @@ function createUI() {
     // Opacity slider
     const opacity = createSlider('opacity', 'Wireframe Opacity', 0, 100, 45);
     
-    // Edge Threshold slider
-    const threshold = createSlider('threshold', 'Edge Threshold', 1, 89, 5, 1, '°');
-    
     // Background color
     const bgColor = createColorPicker('bgColor', 'Background Color', '#000000');
     
@@ -251,7 +255,6 @@ function createUI() {
     
     // Add all controls to the panel
     controlsPanel.appendChild(opacity.container);
-    controlsPanel.appendChild(threshold.container);
     controlsPanel.appendChild(bgColor.container);
     controlsPanel.appendChild(zoom.container);
     controlsPanel.appendChild(camHeight.container);
@@ -266,8 +269,6 @@ function createUI() {
         header: header,
         opacitySlider: opacity.slider,
         opacityValue: opacity.valueDisplay,
-        thresholdSlider: threshold.slider,
-        thresholdValue: threshold.valueDisplay,
         bgColorPicker: bgColor.picker,
         zoomSlider: zoom.slider,
         zoomValue: zoom.valueDisplay,
@@ -420,28 +421,6 @@ function createLoadingOverlay() {
     statusText.style.marginTop = '30px';
     contentContainer.appendChild(statusText);
     
-    // Animate first 3 bars with delay
-    let currentBlock = 0;
-    const initialBlocks = 3;
-    const initialDelay = 500; // 0.5s
-    
-    function animateInitialBlocks() {
-        if (currentBlock < initialBlocks) {
-            // Fill in the next block
-            blocks[currentBlock].style.backgroundColor = 'white';
-            
-            // Update percentage
-            const percent = (currentBlock + 1) * 5;
-            progressText.textContent = `${percent}%`;
-            
-            currentBlock++;
-            setTimeout(animateInitialBlocks, initialDelay);
-        }
-    }
-    
-    // Start the initial animation
-    animateInitialBlocks();
-    
     // Update progress function - fills in blocks up to the percentage
     function updateProgress(percent) {
         // Update text
@@ -462,45 +441,25 @@ function createLoadingOverlay() {
     
     // Show success and fade out
     function showSuccess() {
-        // Animate filling the rest of the progress bar
-        const currentPercent = parseInt(progressText.textContent);
-        const currentBlocksFilled = Math.floor(currentPercent / 5);
-        const remainingBlocks = totalBlocks - currentBlocksFilled;
-        let blockCount = 0;
+        // Update to 100%
+        updateProgress(100);
         
-        function animateRemaining() {
-            if (blockCount < remainingBlocks) {
-                // Fill in the next block
-                blocks[currentBlocksFilled + blockCount].style.backgroundColor = 'white';
-                
-                // Update percentage
-                const nextPercent = currentPercent + ((blockCount + 1) * 5);
-                progressText.textContent = `${nextPercent}%`;
-                
-                blockCount++;
-                setTimeout(animateRemaining, 100);
-            } else {
-                // All blocks filled, show success message
-                statusText.textContent = 'MODEL LOADED SUCCESSFULLY';
-                
-                // Fade out everything together after a delay
-                setTimeout(() => {
-                    overlay.style.opacity = '0';
-                    
-                    // Remove from DOM after fade out
-                    setTimeout(() => {
-                        if (overlay.parentNode) {
-                            overlay.parentNode.removeChild(overlay);
-                            // Show UI after loading is complete
-                            statusElement.style.display = 'none';
-                        }
-                    }, 1000);
-                }, 500);
-            }
-        }
+        // Show success message
+        statusText.textContent = 'MODEL LOADED SUCCESSFULLY';
         
-        // Start filling the remaining blocks
-        animateRemaining();
+        // Fade out everything together after a delay
+        setTimeout(() => {
+            overlay.style.opacity = '0';
+            
+            // Remove from DOM after fade out
+            setTimeout(() => {
+                if (overlay.parentNode) {
+                    overlay.parentNode.removeChild(overlay);
+                    // Show UI after loading is complete
+                    statusElement.style.display = 'none';
+                }
+            }, 1000);
+        }, 500);
     }
     
     // Add to document
@@ -721,17 +680,6 @@ uiControls.opacitySlider.addEventListener('input', (event) => {
     uiControls.opacityValue.textContent = `${event.target.value}%`;
 });
 
-// Edge threshold slider
-uiControls.thresholdSlider.addEventListener('input', (event) => {
-    if (!loadedModel) return;
-    
-    edgeThreshold = parseInt(event.target.value);
-    uiControls.thresholdValue.textContent = `${edgeThreshold}°`;
-    
-    // Regenerate wireframe with new threshold
-    regenerateWireframe(loadedModel, edgeThreshold);
-});
-
 // Update background color
 uiControls.bgColorPicker.addEventListener('input', (event) => {
     const color = new THREE.Color(event.target.value);
@@ -844,6 +792,22 @@ renderer.domElement.addEventListener('mouseup', () => {
     );
     transitionStartTime = Date.now();
     autoRotate = true; // Immediately start auto-rotating
+});
+
+// Add touch event handlers for mobile
+renderer.domElement.addEventListener('touchstart', () => {
+    userInteracting = true;
+    autoRotate = false;
+});
+
+renderer.domElement.addEventListener('touchend', () => {
+    userInteracting = false;
+    userReleasedAngle = Math.atan2(
+        camera.position.z - controls.target.z,
+        camera.position.x - controls.target.x
+    );
+    transitionStartTime = Date.now();
+    autoRotate = true; // Resume auto-rotation
 });
 
 // Start loading the model
