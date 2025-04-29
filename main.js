@@ -238,63 +238,16 @@ function createUI() {
     // Retry button
     const retryButton = createButton('Retry Loading', () => loadModel(true));
     
-    // Create function for dropdown menu
-    function createDropdown(name, label, options, defaultValue) {
-        const container = document.createElement('div');
-        container.style.marginBottom = '15px';
-        
-        const labelEl = document.createElement('label');
-        labelEl.style.display = 'block';
-        labelEl.style.marginBottom = '5px';
-        labelEl.style.fontSize = '13px';
-        labelEl.htmlFor = name;
-        labelEl.textContent = label;
-        
-        const select = document.createElement('select');
-        select.id = name;
-        select.style.width = '100%';
-        select.style.padding = '6px';
-        select.style.backgroundColor = '#444';
-        select.style.color = 'white';
-        select.style.border = '1px solid #666';
-        select.style.borderRadius = '3px';
-        select.style.fontFamily = '"Martian Mono Condensed", monospace';
-        select.style.fontSize = '13px';
-        
-        options.forEach(option => {
-            const optElement = document.createElement('option');
-            optElement.value = option.value;
-            optElement.textContent = option.label;
-            if (option.value === defaultValue) {
-                optElement.selected = true;
-            }
-            select.appendChild(optElement);
-        });
-        
-        container.appendChild(labelEl);
-        container.appendChild(select);
-        
-        return { container, select };
-    }
+    // Model label
+    const modelLabel = document.createElement('div');
+    modelLabel.style.marginBottom = '15px';
+    modelLabel.style.color = 'white';
+    modelLabel.style.fontFamily = '"Martian Mono Condensed", monospace';
+    modelLabel.style.fontSize = '13px';
+    modelLabel.textContent = 'HP-01-TURT';
     
-    // Model dropdown
-    const modelOptions = [
-        { value: 'https://crunchlabs-ono-cloud.s3.us-west-1.amazonaws.com/HP-01-TURT-GAMEREADY-4.fbx', label: 'Turtle Model (S3)' }
-    ];
-    const modelSelect = createDropdown('modelSelect', 'Select Model', modelOptions, 'https://crunchlabs-ono-cloud.s3.us-west-1.amazonaws.com/HP-01-TURT-GAMEREADY-4.fbx');
-    
-    // Add model dropdown to panel (put it at the top of the panel)
-    controlsPanel.insertBefore(modelSelect.container, controlsPanel.firstChild);
-    
-    // Event listener for model selection
-    modelSelect.select.addEventListener('change', (event) => {
-        const selectedModel = event.target.value;
-        // Only reload if the model changes
-        if (modelFilename !== selectedModel) {
-            modelFilename = selectedModel;
-            loadModel(true);
-        }
-    });
+    // Add model label to panel (put it at the top of the panel)
+    controlsPanel.insertBefore(modelLabel, controlsPanel.firstChild);
     
     // Add all controls to the panel
     controlsPanel.appendChild(opacity.container);
@@ -322,7 +275,6 @@ function createUI() {
         cameraHeightValue: camHeight.valueDisplay,
         rotationSpeedSlider: rotSpeed.slider,
         rotationSpeedValue: rotSpeed.valueDisplay,
-        modelSelect: modelSelect.select,
         retryButton: retryButton
     };
 }
